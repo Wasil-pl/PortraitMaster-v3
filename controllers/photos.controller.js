@@ -63,24 +63,21 @@ exports.vote = async (req, res) => {
     console.log('existingVoter:', existingVoter);
 
     if (existingVoter) {
-      if (existingVoter.votes.includes(photoId)) {
+      if (existingVoter.votes.includes(photoId))
         return res.status(500).json({ message: 'This user has already voted for this photo.' });
-      } else {
-        existingVoter.votes.push(photoId);
-        await existingVoter.save();
-      }
+
+      existingVoter.votes.push(photoId);
+      await existingVoter.save();
     } else {
       const newVoter = new Voter({ user: userIp, votes: [photoId] });
       await newVoter.save();
     }
 
-    if (!photoToUpdate) {
-      return res.status(404).json({ message: 'Not found' });
-    } else {
-      photoToUpdate.votes++;
-      await photoToUpdate.save();
-      return res.send({ message: 'OK' });
-    }
+    if (!photoToUpdate) res.status(404).json({ message: 'Not found' });
+
+    photoToUpdate.votes++;
+    await photoToUpdate.save();
+    return res.send({ message: 'OK' });
   } catch (err) {
     return res.status(500).json(err);
   }
