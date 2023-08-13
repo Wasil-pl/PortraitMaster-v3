@@ -9,16 +9,15 @@ exports.add = async (req, res) => {
     const { title, author, email } = req.fields;
     const file = req.files.file;
 
-    const pattern = new RegExp(/(<\s*(strong|em)*>(([A-z]|\s)*)<\s*\/\s*(strong|em)>)|(([A-z]|\s|\.)*)/, 'g');
+    const pattern = new RegExp(/^[a-zA-Z ]*$/);
     const titleMatched = title.match(pattern).join('');
-    const authorMatched = title.match(pattern).join('');
+    const authorMatched = author.match(pattern).join('');
 
     if (titleMatched.length < title.length) throw new Error('Invalid characters...');
     if (authorMatched.length < author.length) throw new Error('Invalid characters...');
 
-    const validateEmail =
-      /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|.(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    if (!email.match(validateEmail)) throw new Error('Invalid email');
+    const emailRegexp = /^[a-zA-Z0-9\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9]{1,5}$/;
+    if (!email.match(emailRegexp)) throw new Error('Invalid email');
 
     const titleMaxLength = 25;
     const authorMaxLength = 50;
@@ -28,9 +27,9 @@ exports.add = async (req, res) => {
 
     const fileName = file.path.split('/').slice(-1)[0]; // cut only filename from full path, e.g. C:/test/abc.jpg -> abc.jpg
     const fileExtension = fileName.split('.').slice(-1)[0];
+    const acceptedFileExtensions = ['jpg', 'png', 'gif'];
 
-    if (fileExtension !== 'jpg' && fileExtension !== 'png' && fileExtension !== 'gif')
-      throw new Error('Unsupported file format');
+    if (!acceptedFileExtensions.includes(fileExtension)) throw new Error('Unsupported file format');
 
     if (!title && !author && !email && !file) throw new Error('Wrong input!'); // if fields are empty...
 
@@ -38,7 +37,7 @@ exports.add = async (req, res) => {
     await newPhoto.save(); // ...save new photo in DB
     res.json(newPhoto);
   } catch (err) {
-    res.status(500).json(err);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -48,7 +47,7 @@ exports.loadAll = async (req, res) => {
   try {
     res.json(await Photo.find());
   } catch (err) {
-    res.status(500).json(err);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -56,27 +55,22 @@ exports.loadAll = async (req, res) => {
 
 exports.vote = async (req, res) => {
   try {
-    const photoToUpdate = await Photo.findOne({ _id: req.params.id });
-    const userIp = requestIp.getClientIp(req);
     const photoId = req.params.id;
-    const existingVoter = await Voter.findOne({ user: userIp });
-    console.log('existingVoter:', existingVoter);
+    const photoToUpdate = await Photo.findById(photoId);
+    if (!photoToUpdate) return res.status(404).json({ message: 'Not found' });
 
-    if (existingVoter) {
-      if (existingVoter.votes.includes(photoId))
-        return res.status(500).json({ message: 'This user has already voted for this photo.' });
+    const userIp = requestIp.getClientIp(req);
+    const voter = (await Voter.findOne({ user: userIp })) || new Voter({ user: userIp, votes: [] });
 
-      existingVoter.votes.push(photoId);
-      await existingVoter.save();
-    } else {
-      const newVoter = new Voter({ user: userIp, votes: [photoId] });
-      await newVoter.save();
-    }
+    if (voter.votes.includes(photoId))
+      return res.status(409).json({ message: 'This user has already voted for this photo.' });
 
-    if (!photoToUpdate) res.status(404).json({ message: 'Not found' });
+    voter.votes.push(photoId);
+    await voter.save();
 
     photoToUpdate.votes++;
     await photoToUpdate.save();
+
     return res.send({ message: 'OK' });
   } catch (err) {
     return res.status(500).json(err);
